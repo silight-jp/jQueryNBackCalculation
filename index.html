@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=320,user-scalable=no">
+		<title>Nバック計算</title>
+		<link rel="stylesheet" href="base-min.css">
+		<link rel="stylesheet" href="buttons-min.css">
+		<style>
+			body {
+				margin: 0;
+				padding: 0;
+				font-size: 32px;
+				width: 320px;
+			}
+			
+			#stage {
+				width: 240px;
+				height: 240px;
+				overflow: hidden;
+				margin-left: 40px;
+				float: left;
+			}
+			
+			#source {
+				display: none;
+			}
+			
+			.formula_container {
+				position: absolute;
+				width: 240px;
+				height: 40px;
+				font-size: 32px;
+				line-height: 40px;
+				text-align: center;
+			}
+			
+			.formula_container div {
+				position: absolute;
+			}
+			
+			.left {
+				left: 0px;
+			}
+			
+			.operator {
+				left: 40px;
+			}
+			
+			.right {
+				left: 80px;
+			}
+			
+			.equal {
+				left: 120px;
+			}
+			
+			.answer {
+				left: 160px;
+			}
+			
+			.result {
+				left: 200px;
+			}
+			
+			#stage div, #stage a {
+				position: absolute;
+			}
+			
+			#title {
+				display: block;
+			}
+			
+			#gameover {
+				display: none;
+			}
+			
+			#stage .pure-button {
+				width: 160px;
+				height: 40px;
+				padding: 0;
+				margin: 0 auto;
+				font-size: 24px;
+				line-height: 40px;
+				left: 40px;
+			}
+			
+			#settingN {
+				left: 40px;
+				top: 72px;
+				width: 240px;
+			}
+			
+			#start {
+				top: 128px;
+			}
+			
+			#result {
+				width: 240px;
+				top: 16px;
+				font-size: 24px;
+				line-height: 40px;
+				text-align: center;
+			}
+			
+			#tweet {
+				top: 72px;
+			}
+			
+			#retry {
+				top: 128px;
+			}
+			
+			#backToTitle {
+				top: 184px;
+			}
+			
+			#pad {
+				width: 250px;
+				height: 100px;
+				padding: 0 35px;
+				margin: 0;
+				float: left;
+			}
+			
+			#pad .pure-button {
+				width: 50px;
+				height: 50px;
+				padding: 0;
+				margin: 0;
+				font-size: 24px;
+				line-height: 50px;
+				float: left;
+			}
+		</style>
+		<script src="jquery-1.11.1.min.js"></script>
+	</head>
+	<body>
+		<div id="stage">
+			<div id="title">
+				<div id="settingN">N = <span id="N"></span></div>
+				<a id="start" class="pure-button pure-button-primary">スタート</a>
+			</div>
+			<div id="gameover">
+				<div id="result"><span id="numQuestion"></span>問中<span id="score"></span>問正解</div>
+				<a id="tweet" class="pure-button pure-button-primary" target="_blank">ツイート</a>
+				<a id="retry" class="pure-button">リトライ</a>
+				<a id="backToTitle" class="pure-button">タイトルに戻る</a>
+			</div>
+			<div id="board"></div>
+		</div>
+		<div id="pad">
+			<a id="button1" class="pure-button">1</a>
+			<a id="button2" class="pure-button">2</a>
+			<a id="button3" class="pure-button">3</a>
+			<a id="button4" class="pure-button">4</a>
+			<a id="button5" class="pure-button">5</a>
+			<a id="button6" class="pure-button">6</a>
+			<a id="button7" class="pure-button">7</a>
+			<a id="button8" class="pure-button">8</a>
+			<a id="button9" class="pure-button">9</a>
+			<a id="button0" class="pure-button">0</a>
+		</div>
+		<div id="source">
+			<div class="formula_container">
+				<div class="formula">
+					<div class="left"></div>
+					<div class="operator"></div>
+					<div class="right"></div>
+				</div>
+				<div class="veil">
+					<div class="left">?</div>
+					<div class="operator">?</div>
+					<div class="right">?</div>
+				</div>
+				<div class="equal">=</div>
+				<div class="answer">_</div>
+				<div class="result"></div>
+			</div>
+		</div>
+<script type="text/javascript">
+
+	var taskList = new Array();
+	var N = 2;
+	var count = 0;
+	var numQuestion = 30;
+	var score = 0;
+	var questionList;
+	var questionIndex = 0;
+	
+	var inputListener = null;
+	
+	function initQuestion() {
+		var array = new Array();
+		for (var left = 0; left <= 9; left++) {
+			for (var right = 0; right <= 9; right++) {
+				if (left + right < 10) {
+					array.push(new Question(left, true, right, left + right));
+				}
+				if (left - right >= 0) {
+					array.push(new Question(left, false, right, left - right));
+				}
+			}
+		}
+		questionList = array;
+		sortQuestion();
+	}
+	
+	function Question(left, isPlus, right, answer) {
+		this.left = left;
+		this.isPlus = isPlus;
+		this.right = right;
+		this.answer = answer;
+	}
+	
+	function Task(question) {
+		this._count = -1;
+		this._correctAnswer = question.answer;
+		
+		this.container = $(".formula_container", "#source").clone();
+		this.formula = $(".formula", this.container);
+		this.veil = $(".veil", this.container);
+		this.left = $(".left", this.formula).text(question.left);
+		this.operator = $(".operator", this.formula).text(question.isPlus ? "+" : "-");
+		this.right = $(".right", this.formula).text(question.right);
+		this.equal = $(".equal", this.container);
+		this.answer = $(".answer", this.container);
+		this.result = $(".result", this.container);
+	}
+
+	Task.prototype = {
+		hasNext: function() {
+			return this._count < N;
+		},
+		next: function() {
+			this._count++;
+			if (this._count == 0) {
+				return this.firstTask();
+			} else if (this._count < N) {
+				return this.middleTask();
+			} else {
+				return this.lastTask();
+			}
+		},
+		firstTask: function() {
+			var deferred = $.Deferred();
+			
+			this.formula
+			.delay(200)
+			.delay(1500)
+			.fadeOut(200);
+			
+			this.veil
+			.hide()
+			.delay(200)
+			.delay(1500)
+			.fadeIn(200);
+			
+			this.answer
+			.hide();
+			
+			this.container
+			.hide()
+			.fadeIn(200)
+			.delay(1500)
+			.delay(200)
+			.delay(1500)
+			.delay(200)
+			.delay(200)
+			.animate({ top: "+=30" }, 200)
+			.queue(function(next) { deferred.resolve(); next(); });
+			
+			$("#board").append(this.container);
+			
+			return deferred.promise();
+		},
+		middleTask: function () {
+			var deferred = $.Deferred();
+			
+			this.container
+			.delay(200)
+			.delay(1500)
+			.delay(200)
+			.delay(1500)
+			.delay(200)
+			.delay(200)
+			.animate({ top: "+=30" }, 200)
+			.queue(function(next) { deferred.resolve(); next(); })
+			
+			return deferred.promise();
+		},
+		lastTask: function() {
+			var deferred = $.Deferred();
+			
+			var answer = this.answer;
+			var correctAnswer = this._correctAnswer;
+			var result = this.result;
+			
+			var input = function(number) {
+				answer.text(number);
+			}
+			
+			this.answer
+			.delay(200)
+			.delay(1500)
+			.queue(function(next) { inputListener = input; next(); })
+			.fadeIn(200)
+			.delay(1500)
+			.queue(function(next) {
+				inputListener = null;
+				var isCorrect = answer.text() == correctAnswer;
+				result.text(isCorrect ? "○" : "×");
+				if (isCorrect) {
+					score++;
+				}
+				next();
+			})
+			.delay(200)
+			.queue(function(next) { deferred.resolve(); next(); });
+			
+			this.result
+			.hide()
+			.delay(200)
+			.delay(1500)
+			.delay(200)
+			.delay(1500)
+			.fadeIn(200);
+			
+			this.formula
+			.delay(200)
+			.delay(1500)
+			.delay(200)
+			.delay(1500)
+			.fadeIn(200)
+			
+			this.veil
+			.delay(200)
+			.delay(1500)
+			.delay(200)
+			.delay(1500)
+			.fadeOut(200)
+			
+			var container = this.container;
+			this.container
+			.delay(200)
+			.delay(1500)
+			.delay(200)
+			.delay(1500)
+			.delay(200)
+			.delay(200)
+			.animate({ top: "+=30", opacity: 0 }, 200)
+			.queue(function(next) { 
+				container.remove();
+				count++;
+				next();
+			});
+			
+			return deferred.promise();
+		},
+		finish: function() {
+			var deferred = $.Deferred();
+			this.container.remove();
+			deferred.resolve();
+			return deferred.promise();
+		}
+	}
+	
+	function sortQuestion() {
+		for (var last = questionList.length - 1; last > 0; last--) {
+			var r = ~~((last + 1) * Math.random());
+			var temp = questionList[last];
+			questionList[last] = questionList[r];
+			questionList[r] = temp;
+		}
+	}
+	
+	function nextTask() {
+		var task = new Task(questionList[questionIndex]);
+		questionIndex++;
+		if (questionIndex >= questionList.length) {
+			sortQuestion();
+			questionIndex = 0;
+		}
+		return task;
+	}
+	
+	function gameNext() {
+		if (count < numQuestion) {
+			taskList.push(nextTask());
+			$.when.apply($, taskList.map(function(element) { return element.next(); }))
+			.then(function() { taskList = taskList.filter(function(element) { return element.hasNext(); }) })
+			.then(gameNext);
+		} else {
+			updateTweetButton();
+			updateResult();
+			
+			$("#gameover")
+			.fadeIn(200);
+			
+			$("#board")
+			.fadeOut(200)
+			.queue(function(next){
+				taskList.map(function(element) { return element.finish(); });
+				next();
+			});
+		}
+	}
+	
+	function gamestart() {
+		count = 0;
+		score = 0;
+		taskList = new Array();
+		gameNext();
+	}
+	
+	function titlestart() {
+		updateN();
+		inputListener = function(number) {
+			N = Math.max(1, Math.min(7, number));
+			updateN();
+		};
+	}
+	
+	$(window).keydown(function(event) {
+		var keyCode = event.keyCode;
+		var dispatchIfNumber = function(base) {
+			if (base <= keyCode && keyCode < base + 10) {
+				inputListener && inputListener(keyCode - base);
+			}
+		}
+		dispatchIfNumber(48);
+		dispatchIfNumber(96);
+	});
+	
+	for (var i = 0; i < 10; i++) {
+		$("#button" + i).mousedown(
+			(function () {
+				var number = i;
+				return function() {
+					inputListener && inputListener(number);
+				}
+			})()
+		);
+	}
+	
+	var isTouchSupported = "ontouchstart" in window;
+	
+	$("#start").mousedown(function() {
+		$("#title")
+		.fadeOut(200);
+		
+		$("#board")
+		.fadeIn(200)
+		.queue(function(next) {
+			inputListener = null;
+			gamestart();
+			next();
+		});
+	});
+	
+	$("#retry").mousedown(function() {
+		$("#gameover")
+		.fadeOut(200);
+		
+		$("#board")
+		.fadeIn(200)
+		.queue(function(next) {
+			gamestart();
+			next();
+		});
+	});
+	
+	$("#backToTitle").mousedown(function() {
+		$("#gameover")
+		.fadeOut(200);
+		
+		$("#title")
+		.fadeIn(200)
+		.queue(function(next) {
+			titlestart();
+			next();
+		});
+	});
+	
+	function updateN() {
+		$("#N").text(N);
+	}
+	
+	function updateResult() {
+		$("#numQuestion").text(numQuestion);
+		$("#score").text(score);
+	}
+	
+	function updateTweetButton() {
+		var url = encodeURI("https://twitter.com/intent/tweet?text=")
+		+ encodeURIComponent(
+			"あなたはN = " + N + "のNバック計算で" + numQuestion + "問中" + score + "問正解でした。"
+		+ "http://silight-jp.github.io/jQueryNbackCalculation/ #Nバック計算");
+		$("#tweet").attr("href", url);
+	}
+	
+	initQuestion();
+	titlestart();
+</script>
+	</body>
+</html>
